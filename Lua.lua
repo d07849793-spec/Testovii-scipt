@@ -29,6 +29,7 @@ local Window = Rayfield:CreateWindow({
 -- Переменные
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -36,6 +37,11 @@ local AimbotEnabled = false
 local FOVRadius = 100
 local RainbowFOV = false
 local ESPOpen = false
+
+local WalkSpeedValue = 16
+local JumpPowerValue = 50
+local BHopEnabled = false
+local IsInvisible = false
 
 -- FOV Circle setup
 local FOVCircle = Drawing.new("Circle")
@@ -112,8 +118,10 @@ MainTab:CreateSection("ESP Ролей")
 local Highlights = {}
 
 local function ClearESP()
-    for _, highlight in pairs(Highlights) do
-        if highlight then highlight:Destroy() end
+    for player, highlight in pairs(Highlights) do
+        if highlight then 
+            highlight:Destroy() 
+        end
     end
     Highlights = {}
 end
@@ -130,7 +138,91 @@ MainTab:CreateToggle({
    end,
 })
 
--- Радужный цикл и позиционирование FOV
+-- Вкладка Player (Перемещение и Невидимость)
+local PlayerTab = Window:CreateTab("Player", 4483362458)
+
+PlayerTab:CreateSection("Модификации игрока")
+
+PlayerTab:CreateSlider({
+   Name = "Скорость бега (WalkSpeed)",
+   Range = {16, 120},
+   Increment = 1,
+   Suffix = "spd",
+   CurrentValue = 16,
+   Flag = "WalkSpeedSlider",
+   Callback = function(Value)
+      WalkSpeedValue = Value
+   end,
+})
+
+PlayerTab:CreateSlider({
+   Name = "Высота прыжка (JumpPower)",
+   Range = {50, 200},
+   Increment = 1,
+   Suffix = "pwr",
+   CurrentValue = 50,
+   Flag = "JumpPowerSlider",
+   Callback = function(Value)
+      JumpPowerValue = Value
+   end,
+})
+
+PlayerTab:CreateToggle({
+   Name = "BunnyHop (Авто-прыжок)",
+   CurrentValue = false,
+   Flag = "BHopToggle",
+   Callback = function(Value)
+      BHopEnabled = Value
+   end,
+})
+
+PlayerTab:CreateSection("Невидимость")
+
+local function SetInvisibility(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if state then
+        local clone = hrp:Clone()
+        clone.Parent = char
+        hrp.Transparency = 1
+        
+        for _, v in pairs(char:GetChildren()) do
+            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+                v.Transparency = 0.5
+            end
+        end
+        
+        task.spawn(function()
+            while IsInvisible and task.wait() do
+                if char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso") then
+                    char.PrimaryPart = hrp
+                end
+            end
+        end)
+    else
+        for _, v in pairs(char:GetChildren()) do
+            if v:IsA("BasePart") then
+                v.Transparency = 0
+            end
+        end
+    end
+end
+
+PlayerTab:CreateToggle({
+   Name = "Невидимость (Invisibility)",
+   CurrentValue = false,
+   Flag = "InvisToggle",
+   Callback = function(Value)
+      IsInvisible = Value
+      SetInvisibility(Value)
+   end,
+})
+
+-- Основной цикл обновления
 local hue = 0
 RunService.RenderStepped:Connect(function()
     FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
@@ -140,7 +232,19 @@ RunService.RenderStepped:Connect(function()
         FOVCircle.Color = Color3.fromHSV(hue, 1, 1)
     end
     
-    -- Логика Аимбота
+    -- Скорость и JumpPower
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        local hum = LocalPlayer.Character.Humanoid
+        hum.WalkSpeed = WalkSpeedValue
+        hum.UseJumpPower = true
+        hum.JumpPower = JumpPowerValue
+        
+        if BHopEnabled and hum.FloorMaterial ~= Enum.Material.Air and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+
+    -- Аимбот
     if AimbotEnabled then
         local target = nil
         local shortestDist = FOVRadius
@@ -167,12 +271,20 @@ RunService.RenderStepped:Connect(function()
         end
     end
     
-    -- Логика ESP
+    -- Исправленная логика ESP (Авто-обновление при возрождении/смерти)
     if ESPOpen then
+        -- Очищаем битые объекты Highlight от умерших игроков
+        for plr, hl in pairs(Highlights) do
+            if not plr or not plr.Parent or not plr.Character or not hl.Parent or hl.Parent ~= plr.Character then
+                if hl then hl:Destroy() end
+                Highlights[plr] = nil
+            end
+        end
+
         for _, plr in pairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character then
+            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
                 local role = GetPlayerRole(plr)
-                local color = Color3.fromRGB(0, 255, 0) -- Innocent
+                local color = Color3.fromRGB(0, 255, 0)
                 
                 if role == "Murderer" then
                     color = Color3.fromRGB(255, 0, 0)
@@ -181,7 +293,7 @@ RunService.RenderStepped:Connect(function()
                 end
                 
                 local hl = Highlights[plr]
-                if not hl or not hl.Parent then
+                if not hl or not hl.Parent or hl.Parent ~= plr.Character then
                     hl = Instance.new("Highlight")
                     hl.Name = "RoleESP"
                     hl.FillTransparency = 0.5
