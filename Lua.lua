@@ -1,5 +1,17 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
+-- Файл для хранения ключа
+local KeyFileName = "MM2HelperKey.txt"
+local CurrentKey = "mm2bro" -- Ключ по умолчанию
+
+-- Проверка и чтение сохраненного ключа
+if isfile and isfile(KeyFileName) then
+    local savedKey = readfile(KeyFileName)
+    if savedKey and savedKey ~= "" then
+        CurrentKey = savedKey
+    end
+end
+
 local Window = Rayfield:CreateWindow({
    Name = "mm2 helper",
    LoadingTitle = "MM2 Helper Loading...",
@@ -19,17 +31,16 @@ local Window = Rayfield:CreateWindow({
       Title = "mm2 helper | Key System",
       Subtitle = "Created by kupa scripts",
       Note = "Введите ключ доступа",
-      FileName = "MM2HelperKey",
+      FileName = "MM2HelperKeySave",
       SaveKey = true,
       GrabKeyFromSite = false,
-      Key = {"mm2bro"}
+      Key = {CurrentKey}
    }
 })
 
 -- Переменные
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
@@ -40,7 +51,6 @@ local ESPOpen = false
 
 local WalkSpeedValue = 16
 local JumpPowerValue = 50
-local BHopEnabled = false
 local IsInvisible = false
 
 -- FOV Circle setup
@@ -138,7 +148,7 @@ MainTab:CreateToggle({
    end,
 })
 
--- Вкладка Player (Перемещение и Невидимость)
+-- Вкладка Player
 local PlayerTab = Window:CreateTab("Player", 4483362458)
 
 PlayerTab:CreateSection("Модификации игрока")
@@ -164,15 +174,6 @@ PlayerTab:CreateSlider({
    Flag = "JumpPowerSlider",
    Callback = function(Value)
       JumpPowerValue = Value
-   end,
-})
-
-PlayerTab:CreateToggle({
-   Name = "BunnyHop (Авто-прыжок)",
-   CurrentValue = false,
-   Flag = "BHopToggle",
-   Callback = function(Value)
-      BHopEnabled = Value
    end,
 })
 
@@ -222,6 +223,71 @@ PlayerTab:CreateToggle({
    end,
 })
 
+-- Вкладка Key (Управление и удаление ключа)
+local KeyTab = Window:CreateTab("Key", 4483362458)
+
+KeyTab:CreateSection("Текущий ключ")
+
+local KeyLabel = KeyTab:CreateLabel("Активный ключ: " .. CurrentKey)
+
+KeyTab:CreateSection("Смена ключа")
+
+local NewKeyInput = ""
+
+KeyTab:CreateInput({
+   Name = "Новый ключ",
+   PlaceholderText = "Введите новый ключ",
+   RemoveTextOnFocusLost = false,
+   Callback = function(Text)
+      NewKeyInput = Text
+   end,
+})
+
+KeyTab:CreateButton({
+   Name = "Сохранить новый ключ",
+   Callback = function()
+      if NewKeyInput ~= "" then
+         if writefile then
+            writefile(KeyFileName, NewKeyInput)
+            CurrentKey = NewKeyInput
+            KeyLabel:Set("Активный ключ: " .. CurrentKey)
+            Rayfield:Notify({
+               Title = "Успешно!",
+               Content = "Новый ключ сохранен: " .. NewKeyInput,
+               Duration = 4,
+               Image = 4483362458,
+            })
+         end
+      end
+   end,
+})
+
+KeyTab:CreateSection("Удаление ключа")
+
+KeyTab:CreateButton({
+   Name = "Удалить/Сбросить ключ",
+   Callback = function()
+      -- Удаляем файлы сохранения ключа (и наш файл, и встроенный кэш Rayfield)
+      if delfile then
+         if isfile(KeyFileName) then delfile(KeyFileName) end
+         if isfile("MM2HelperKeySave.txt") then delfile("MM2HelperKeySave.txt") end
+         if isfile(".MM2HelperKeySave") then delfile(".MM2HelperKeySave") end
+      elseif writefile then
+         writefile(KeyFileName, "")
+      end
+      
+      CurrentKey = "mm2bro"
+      KeyLabel:Set("Активный ключ: mm2bro (по умолчанию)")
+      
+      Rayfield:Notify({
+         Title = "Ключ удален!",
+         Content = "Все сохраненные ключи сброшены к начальным настройкам.",
+         Duration = 5,
+         Image = 4483362458,
+      })
+   end,
+})
+
 -- Основной цикл обновления
 local hue = 0
 RunService.RenderStepped:Connect(function()
@@ -238,10 +304,6 @@ RunService.RenderStepped:Connect(function()
         hum.WalkSpeed = WalkSpeedValue
         hum.UseJumpPower = true
         hum.JumpPower = JumpPowerValue
-        
-        if BHopEnabled and hum.FloorMaterial ~= Enum.Material.Air and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
-        end
     end
 
     -- Аимбот
@@ -271,9 +333,8 @@ RunService.RenderStepped:Connect(function()
         end
     end
     
-    -- Исправленная логика ESP (Авто-обновление при возрождении/смерти)
+    -- Логика ESP
     if ESPOpen then
-        -- Очищаем битые объекты Highlight от умерших игроков
         for plr, hl in pairs(Highlights) do
             if not plr or not plr.Parent or not plr.Character or not hl.Parent or hl.Parent ~= plr.Character then
                 if hl then hl:Destroy() end
